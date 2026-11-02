@@ -64,6 +64,27 @@ export function isHit(shot: Shot, target: Target): boolean {
   return Math.hypot(shot.x - target.x, shot.y - target.y) <= target.radius;
 }
 
+/**
+ * When, as a fraction of the next `dt` seconds, the shot first touches the
+ * target, or null if it doesn't. This checks the shot's whole path, not just
+ * where it ends up, so a fast shot can't skip past a target.
+ */
+export function hitTime(shot: Shot, target: Target, dt: number): number | null {
+  const startX = shot.x - target.x;
+  const startY = shot.y - target.y;
+  const moveX = shot.vx * dt;
+  const moveY = shot.vy * dt;
+  const c = startX * startX + startY * startY - target.radius * target.radius;
+  if (c <= 0) return 0;
+  const a = moveX * moveX + moveY * moveY;
+  if (a === 0) return null;
+  const b = 2 * (startX * moveX + startY * moveY);
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+  return t >= 0 && t <= 1 ? t : null;
+}
+
 /** Fires one shot of water towards the aim point. Returns false if nothing fired. */
 export function fire(state: WaterCannonState, aimX: number, aimY: number): boolean {
   if (state.phase !== 'playing' || state.tank === 0) return false;
@@ -90,9 +111,17 @@ export function step(state: WaterCannonState, dt: number): void {
 
   const remaining: Shot[] = [];
   for (const shot of state.shots) {
+    let target: Target | undefined;
+    let earliest = Infinity;
+    for (const t of state.targets) {
+      const time = hitTime(shot, t, dt);
+      if (time !== null && time < earliest) {
+        target = t;
+        earliest = time;
+      }
+    }
     shot.x += shot.vx * dt;
     shot.y += shot.vy * dt;
-    const target = state.targets.find((t) => isHit(shot, t));
     if (target) {
       state.score += scoreForHit(target);
       state.splashes.push({ x: target.x, y: target.y, age: 0 });
